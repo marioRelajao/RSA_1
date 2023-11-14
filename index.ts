@@ -3,6 +3,8 @@ import logger from 'morgan'  // logger
 import cors from 'cors'  // allow us to permit connection from origins that are not our domain. Needed to allow the client (whose javascript is downloaded from another server) to connect 
 import { RsaKeyPair, generateRSAKeys } from './rsa/genRSA'
 import RsaPubKey from './rsa/RsaPubKey'
+import RsaPrivKey from './rsa/RsaPrivKey'
+import { bigintToBase64, base64ToBigint, bigintToText } from 'bigint-conversion'
 
 
 const app = express()
@@ -29,15 +31,15 @@ interface ResponseMsg {
   pubKey?: RsaPubKey
   error?: string
 }
+interface CipherMsg {
+  ciphertext?: string
+  error?: string
+}
+interface DecryptionResponse {
+  decryptedMessage?: string;
+  error?: string;
+}
 
-/**
- * Now we add the types and then TypeScript will infer the JSON.
- * A request is typed as Request<ParamsDictionary, ResBody, ReqBody, ReqQuery, Locals>
- * We will not use neither ParamsDictionary nor Locals (we will ignore them by setting the type to {}); for us the important ones are:
- *  - ResBody. The interface of our JSON response body. In our case it will be ResponseMsg
- *  - ReqQuery. The interface of the received query parametrs. Using RequestMsg would allow the case of http://localhost:3000/hello?name=Alice or just http://localhost:3000/hello, since `name` is an optional field.
- *  - ReqBody. The interface of the request body in an HTTP POST or PUT.
- */
 
 async function initializeRSAKeyPair() {
     try {
@@ -48,12 +50,8 @@ async function initializeRSAKeyPair() {
     }
   }
 
-// app.get('/hello', (req: Request<{}, ResponseMsg, {}, RequestMsg, {}>, res) => {
-//   res.send({
-//     msg: 'Hello ' + (req.query.name ??'anonymous')
-//   })
-// })
-app.get('/UwU', (req: Request<{}, ResponseMsg, {}, RequestMsg, {}>, res) => {
+
+app.get('/getRSA', (req: Request<{}, ResponseMsg, {}, RequestMsg, {}>, res) => {
     if (keyPair) {
         res.json({
           pubKey: keyPair.publicKey,
@@ -63,21 +61,56 @@ app.get('/UwU', (req: Request<{}, ResponseMsg, {}, RequestMsg, {}>, res) => {
       }
 })
 
-// app.post('/hello', (req: Request<{}, ResponseMsg, RequestMsg, {}, {}>, res) => {
-//   res.send({
-//     msg: 'Hello ' + (req.body.name ??'anonymous')
-//   })
-// })
 
 
-// This is our error middleware. If there is any error server side, we log it (server-side), and we answer with empty message and an error messgae 
-// app.use((err: Error, req: Request, res: Response<ResponseMsg>, next: NextFunction) => {
-//   console.error(err.stack)
-//   res.status(500).json({
-//     msg: '',
-//     error: 'something went bad'
-//   })
-// })
+app.post('/encrypt', (req: Request<{}, CipherMsg, { message: string }, RequestMsg, {}>, res) => {
+  if (keyPair && req.body.message) {
+    const messageToEncrypt = req.body.message;
+    const publicKey = keyPair.publicKey;
+
+    // Convertir la clave pública a un formato adecuado
+    const rsaPubKey = new RsaPubKey(publicKey.e, publicKey.n);
+
+    // Convertir la cadena de texto a un Buffer antes de cifrar
+    const messageBuffer = Buffer.from(messageToEncrypt, 'utf-8');
+
+    // Cifrar el mensaje utilizando la clave pública RSA
+    const encryptedMessage = rsaPubKey.encrypt(BigInt('0x' + messageBuffer.toString('hex')));
+
+    // Convertir el mensaje cifrado a base64 antes de enviarlo al cliente
+    const encryptedMessageBase64 = bigintToBase64(encryptedMessage);
+
+    res.json({ ciphertext: encryptedMessageBase64 });
+  } else {
+    res.status(500).json({ error: 'RSA key pair not available or message missing' });
+  }
+});
+
+app.post('/decrypt', (req: Request<{}, DecryptionResponse, { encryptedMessage: string }, RequestMsg, {}>, res) => {
+  if (keyPair && req.body.encryptedMessage) {
+    const encryptedMessageBase64 = req.body.encryptedMessage;
+
+    // Convertir el mensaje cifrado de base64 a BigInt
+    const encryptedMessageBigInt = base64ToBigint(encryptedMessageBase64);
+
+    // Convertir la clave privada a un formato adecuado
+    const rsaPrivKey = new RsaPrivKey(keyPair.privateKey.d, keyPair.privateKey.n);
+
+    try {
+      // Descifrar el mensaje utilizando la clave privada RSA
+      const decryptedMessageBigInt = rsaPrivKey.decrypt(encryptedMessageBigInt);
+      const decryptedMessage = bigintToText(decryptedMessageBigInt);
+
+      res.json({ decryptedMessage });
+    } catch (error) {
+      console.error('Error al descifrar el mensaje:', error);
+      res.status(500).json({ error: 'Error al descifrar el mensaje' });
+    }
+  } else {
+    res.status(500).json({ error: 'RSA key pair not available or encrypted message missing' });
+  }
+});
+
 
 app.listen(port, () => {
   console.log(`Example app listening at http://localhost:${port}`);
