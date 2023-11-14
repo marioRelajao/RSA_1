@@ -4,7 +4,7 @@ import cors from 'cors'  // allow us to permit connection from origins that are 
 import { RsaKeyPair, generateRSAKeys } from './rsa/genRSA'
 import RsaPubKey from './rsa/RsaPubKey'
 import RsaPrivKey from './rsa/RsaPrivKey'
-import { bigintToBase64, base64ToBigint, bigintToText } from 'bigint-conversion'
+import { textToBigint ,bigintToBase64, base64ToBigint, bigintToText } from 'bigint-conversion'
 
 
 const app = express()
@@ -67,20 +67,11 @@ app.post('/encrypt', (req: Request<{}, CipherMsg, { message: string }, RequestMs
   if (keyPair && req.body.message) {
     const messageToEncrypt = req.body.message;
     const publicKey = keyPair.publicKey;
-
-    // Convertir la clave pública a un formato adecuado
-    const rsaPubKey = new RsaPubKey(publicKey.e, publicKey.n);
-
-    // Convertir la cadena de texto a un Buffer antes de cifrar
-    const messageBuffer = Buffer.from(messageToEncrypt, 'utf-8');
-
-    // Cifrar el mensaje utilizando la clave pública RSA
-    const encryptedMessage = rsaPubKey.encrypt(BigInt('0x' + messageBuffer.toString('hex')));
-
-    // Convertir el mensaje cifrado a base64 antes de enviarlo al cliente
+    const encryptedMessage = publicKey.encrypt(textToBigint(messageToEncrypt));
     const encryptedMessageBase64 = bigintToBase64(encryptedMessage);
-
-    res.json({ ciphertext: encryptedMessageBase64 });
+    res.json({ 
+      ciphertext: encryptedMessageBase64
+     });
   } else {
     res.status(500).json({ error: 'RSA key pair not available or message missing' });
   }
@@ -89,16 +80,10 @@ app.post('/encrypt', (req: Request<{}, CipherMsg, { message: string }, RequestMs
 app.post('/decrypt', (req: Request<{}, DecryptionResponse, { encryptedMessage: string }, RequestMsg, {}>, res) => {
   if (keyPair && req.body.encryptedMessage) {
     const encryptedMessageBase64 = req.body.encryptedMessage;
-
-    // Convertir el mensaje cifrado de base64 a BigInt
     const encryptedMessageBigInt = base64ToBigint(encryptedMessageBase64);
-
-    // Convertir la clave privada a un formato adecuado
-    const rsaPrivKey = new RsaPrivKey(keyPair.privateKey.d, keyPair.privateKey.n);
-
+    const privKey = keyPair.privateKey;
     try {
-      // Descifrar el mensaje utilizando la clave privada RSA
-      const decryptedMessageBigInt = rsaPrivKey.decrypt(encryptedMessageBigInt);
+      const decryptedMessageBigInt = privKey.decrypt(encryptedMessageBigInt);
       const decryptedMessage = bigintToText(decryptedMessageBigInt);
 
       res.json({ decryptedMessage });
