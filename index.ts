@@ -4,12 +4,15 @@ import cors from 'cors'  // allow us to permit connection from origins that are 
 import { RsaKeyPair, generateRSAKeys } from './rsa/genRSA'
 import RsaPubKey from './rsa/RsaPubKey'
 import RsaPrivKey from './rsa/RsaPrivKey'
-import { textToBigint ,bigintToBase64, base64ToBigint, bigintToText } from 'bigint-conversion'
+import { split, combine } from 'shamirs-secret-sharing-ts'
+import { textToBigint ,bigintToBase64, base64ToBigint, bigintToText, bufToHex } from 'bigint-conversion'
 import { hexToBigint } from 'bigint-crypto-utils'
 
 
 const app = express()
 const port = 3000
+const crypto = require('crypto');
+let testSecret = crypto.randomBytes(64)
 let keyPair: RsaKeyPair;
 let pubKeyClient: RsaPubKey | null = null
 app.use(logger('dev')) // we use the morgan middleware to log some information regarding every request.
@@ -62,6 +65,28 @@ app.get('/getRSA', (req: Request<{}, ResponseMsg, {}, RequestMsg, {}>, res) => {
         res.status(500).json({ error: 'RSA key pair not available' });
       }
 })
+
+app.get('/secret', async (req: Request, res: Response) => {
+  try {
+    const secret = Buffer.from(testSecret)
+    console.log(`Valor de Secret: ${bufToHex(secret)}`)
+    let slices:Array<string> = await sliceSecret(secret)
+    console.log(`Valor de las slices: ${slices}`)
+    res.status(200).json({sahres:slices})
+  }
+  catch(err){
+    console.log(err)
+    res.status(500).json({message:"Server Error UwU 👉👈"})
+  }
+})
+
+async function sliceSecret (secret:Uint8Array): Promise<Array<string>>{
+  console.log('Slicing usando 10 slices, 4 threshold')
+  let buffers = split(secret, { shares: 10, threshold: 4 })
+  let slices: Array<string> = []
+  buffers.forEach((buffer: any) => slices.push(bufToHex(buffer)))
+  return slices
+}
 
 //Recibir la PKey de cliente (✅)
 app.post('/postRSA', (req:Request, res:Response) => {
