@@ -5,8 +5,9 @@ import { RsaKeyPair, generateRSAKeys } from './rsa/genRSA'
 import RsaPubKey from './rsa/RsaPubKey'
 import RsaPrivKey from './rsa/RsaPrivKey'
 import { split, combine } from 'shamirs-secret-sharing-ts'
-import { textToBigint ,bigintToBase64, base64ToBigint, bigintToText, bufToHex } from 'bigint-conversion'
+import { textToBigint ,bigintToBase64, base64ToBigint, bigintToText, bufToHex, hexToBuf } from 'bigint-conversion'
 import { hexToBigint } from 'bigint-crypto-utils'
+import e from 'express'
 
 
 const app = express()
@@ -72,7 +73,9 @@ app.get('/secret', async (req: Request, res: Response) => {
     console.log(`Valor de Secret: ${bufToHex(secret)}`)
     let slices:Array<string> = await sliceSecret(secret)
     console.log(`Valor de las slices: ${slices}`)
-    res.status(200).json({sahres:slices})
+    res.status(200).json({
+      clave: bufToHex(secret),
+      shares:slices})
   }
   catch(err){
     console.log(err)
@@ -137,6 +140,35 @@ app.post('/decrypt', (req: Request, res: Response) => {
     res.status(500).json({ error: 'RSA key pair not available or encrypted message missing' });
   }
 });
+
+app.post('/recover', async (req: Request, res: Response) => {
+  try {
+    const elements: string[] = req.body.shares;
+    const recoveredSecret = await recoverSecret(elements);
+    res.status(200).json({
+      recoveredSecret: bufToHex(recoveredSecret),
+    });
+  } catch (error) {
+    console.error('Error recovering secret:', error);
+    res.status(500).json({ error: 'Error recovering secret' });
+  }
+});
+
+async function recoverSecret(elements: string[] | null | undefined): Promise<Uint8Array> {
+  //console.log(elements)
+  if (elements == null) {
+    throw new Error('Array of elements is null or undefined.');
+  }
+  const buffers = elements.map((element) => {
+    if (element == null) {
+      throw new Error('Hex string in the array is null or undefined.');
+    }
+    return hexToBuf(element);
+  });
+  console.log(buffers);
+  const recoveredSecret = combine(buffers);
+  return recoveredSecret;
+}
 
 //Firmamos el mensaje que nos envie el cliente (✅)
 app.post('/sign', (req: Request, res: Response) => {
